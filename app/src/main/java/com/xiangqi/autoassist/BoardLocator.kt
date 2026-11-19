@@ -1,28 +1,19 @@
 package com.xiangqi.autoassist
 
 import android.graphics.Bitmap
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
  * 模板落位棋盘定位器：
- * 1. 在搜索区域内对 90 个候选格点做模板匹配（取各点最高分）
- * 2. 高分点作为"棋子锚点"
- * 3. 对锚点按初始网格的格子尺寸投票 → 得到网格左上角偏移
- * 4. 返回校正后的网格
- *
- * 适用场景：应用切换导致棋盘整体平移/轻微滚动（JJ 象棋实测常见）。
+ * 1. 以参考网格为初值，在 ±maxOff 范围内对 90 个交叉点做模板匹配；
+ * 2. 对匹配分 >= 阈值的锚点，做"整体平移一致性"投票（网格刚性平移假设）；
+ * 3. 一致票数达标的平移量取中位数细化，得到校正网格。
  */
 object BoardLocator {
 
-    /**
-     * @param bmpFull   全屏截图
-     * @param templates 模板（>=14）
-     * @param baseGrid  上次已知网格（作为格子尺寸来源与初值）
-     * @param searchPad 搜索区域在棋盘四周外扩的像素（全分辨率）
-     * @return 校正后的网格；失败返回 null
-     */
     fun locate(
         bmpFull: Bitmap,
         templates: List<Template>,
@@ -51,83 +42,100 @@ object BoardLocator {
 
         val cw = baseGrid.cellW
         val ch = baseGrid.cellH
-        val rad = max(4, (min(cw, ch) * 0.44f * 0.5f).roundToInt())
-        val maxOff = max(3, rad / 3) // 半分辨率下的搜索半径
+        // 窗口尺寸必须与模板一致（corrAt 语义）
+        val tplW = templates.maxOf { it.w }
+        val tplH = templates.maxOf { it.h }
+        val radX = tplW / 2
+        val radY = tplH / 2
+        // 搜索半径（半分辨率）：约 3/4 格，覆盖棋盘整体平移
+        val maxOff = max(6, (min(cw, ch) * 0.75f * 0.5f).roundToInt())
         val step = 2
 
-        // 90 个候选格点（以初始网格为参考，允许整体平移由偏移搜索覆盖）
-        val votesX = HashMap<Int, Int>()
-        val votesY = HashMap<Int, Int>()
-        val anchorOff = HashMap<Long, Pair<Int, Int>>() // (r*9+c) -> (ox, oy) 最佳偏移
-        var anchors = 0
+        // 每个格点的最佳匹配分与对应平移量（全分辨率）
+        val scores = Array(10) { FloatArray(9) }
+        val shiftX = Array(10) { IntArray(9) }
+        val shiftY = Array(10) { IntArray(9) }
         for (r in 0..9) {
             for (c in 0..8) {
-                val cx = ((baseGrid.x0 + c * cw + 0.5f * cw - reg[0]) * 0.5f).roundToInt()
-                val cy = ((baseGrid.y0 + r * ch + 0.5f * ch - reg[1]) * 0.5f).roundToInt()
+                val cx = ((baseGrid.x0 + c * cw - reg[0]) * 0.5f).roundToInt()
+                val cy = ((baseGrid.y0 + r * ch - reg[1]) * 0.5f).roundToInt()
                 var best = 0f
-                var bestOx = 0
-                var bestOy = 0
+                var bdx = 0
+                var bdy = 0
                 for (t in templates) {
-                    // 逐偏移取最优（bestAt 不返回偏移，这里手动展开一层）
                     var oy = -maxOff
                     while (oy <= maxOff) {
                         var ox = -maxOff
                         while (ox <= maxOff) {
-                            val s = Ncc.corrAt(px, sw, sh, cx + ox, cy + oy, rad, t)
+                            val s = Ncc.corrAt(px, sw, sh, cx + ox, cy + oy, radX, t)
                             if (s > best) {
-                                best = s; bestOx = ox; bestOy = oy
+                                best = s
+                                bdx = ox * 2
+                                bdy = oy * 2
                             }
                             ox += step
                         }
                         oy += step
                     }
                 }
-                if (best >= threshold) {
-                    anchors++
-                    anchorOff[(r * 9L + c)] = Pair(bestOx, bestOy)
-                    // 锚点像素坐标（全分辨率，相对截图原点）
-                    val axFull = (cx + bestOx) * 2 + reg[0]
-                    val ayFull = (cy + bestOy) * 2 + reg[1]
-                    for (i in 0..8) {
-                        val v = ((axFull - i * cw) / 4).roundToInt() * 4
-                        votesX[v] = (votesX[v] ?: 0) + 1
-                    }
-                    for (j in 0..9) {
-                        val v = ((ayFull - j * ch) / 4).roundToInt() * 4
-                        votesY[v] = (votesY[v] ?: 0) + 1
-                    }
-                }
+                scores[r][c] = best
+                shiftX[r][c] = bdx
+                shiftY[r][c] = bdy
             }
         }
-        if (anchors < 4) return null
-        val bx = votesX.maxByOrNull { it.value } ?: return null
-        val by = votesY.maxByOrNull { it.value } ?: return null
 
-        // 细化：取峰桶附近的锚点均值（用各点实际最佳偏移）
-        fun refine(peak: Int, cell: Float, isX: Boolean): Float? {
-            val sel = mutableListOf<Float>()
-            for (r in 0..9) {
-                for (c in 0..8) {
-                    if (anchorOff[(r * 9L + c)] == null) continue
-                    val (ox, oy) = anchorOff[(r * 9L + c)]!!
-                    val cx = ((baseGrid.x0 + c * cw + 0.5f * cw - reg[0]) * 0.5f).roundToInt()
-                    val cy = ((baseGrid.y0 + r * ch + 0.5f * ch - reg[1]) * 0.5f).roundToInt()
-                    val axFull = (cx + ox) * 2 + reg[0]
-                    val ayFull = (cy + oy) * 2 + reg[1]
-                    val p = if (isX) axFull else ayFull
-                    val i = if (isX) c else r
-                    if (kotlin.math.abs((p - i * cell) - peak) < 8) {
-                        sel.add(p - i * cell)
-                    }
-                }
+        // 平移一致性：统计与 (dx,dy) 一致（±4px）的高分锚点数
+        fun agreement(dx: Int, dy: Int, tol: Int = 4): Int {
+            var n = 0
+            for (r in 0..9) for (c in 0..8) {
+                if (scores[r][c] >= threshold &&
+                    abs(shiftX[r][c] - dx) <= tol && abs(shiftY[r][c] - dy) <= tol
+                ) n++
             }
-            return if (sel.size >= 3) sel.sorted()[sel.size / 2] else null
+            return n
         }
-        val fx0 = refine(bx.key, cw, true) ?: return null
-        val fy0 = refine(by.key, ch, false) ?: return null
-        // 校验：与初始网格偏移不能太离谱（< 2 格）
-        if (kotlin.math.abs(fx0 - baseGrid.x0) > cw * 2.5f) return null
-        if (kotlin.math.abs(fy0 - baseGrid.y0) > ch * 2.5f) return null
-        return Grid(fx0, fy0, fx0 + 8 * cw, fy0 + 9 * ch)
+
+        var bestDx = 0
+        var bestDy = 0
+        var bestN = -1
+        val span = maxOff * 2
+        var dy = -span
+        while (dy <= span) {
+            var dx = -span
+            while (dx <= span) {
+                val n = agreement(dx, dy)
+                if (n > bestN || (n == bestN && abs(dx) + abs(dy) < abs(bestDx) + abs(bestDy))) {
+                    bestN = n
+                    bestDx = dx
+                    bestDy = dy
+                }
+                dx += step * 2
+            }
+            dy += step * 2
+        }
+        if (bestN < 4) return null
+
+        // 中位数细化（取一致锚点的平移量）
+        val sxs = mutableListOf<Int>()
+        val sys = mutableListOf<Int>()
+        for (r in 0..9) for (c in 0..8) {
+            if (scores[r][c] >= threshold &&
+                abs(shiftX[r][c] - bestDx) <= 4 && abs(shiftY[r][c] - bestDy) <= 4
+            ) {
+                sxs.add(shiftX[r][c])
+                sys.add(shiftY[r][c])
+            }
+        }
+        if (sxs.size < 4) return null
+        sxs.sort()
+        sys.sort()
+        val mdx = sxs[sxs.size / 2].toFloat()
+        val mdy = sys[sys.size / 2].toFloat()
+
+        val nx0 = baseGrid.x0 + mdx
+        val ny0 = baseGrid.y0 + mdy
+        // 平移量不得离谱（< 2.5 格）
+        if (abs(mdx) > cw * 2.5f || abs(mdy) > ch * 2.5f) return null
+        return Grid(nx0, ny0, nx0 + 8 * cw, ny0 + 9 * ch)
     }
 }
