@@ -126,7 +126,7 @@ object TemplateStore {
             squares.add(Triple(6, c, "P"))
         }
         clear(ctx)
-        val rad = sampleRadius(g)
+        val rad = BoardRecognizer.sampleRadius(g)
         var ok = 0
         var lastErr = ""
         for ((r, c, code) in squares) {
@@ -147,7 +147,7 @@ object TemplateStore {
 
     /** 从截图按网格+模板识别棋盘（屏幕视角），空位为 null */
     fun recognizeBoard(bmpFull: Bitmap, g: Grid, templates: List<Template>, threshold: Float): Array<Array<String?>> {
-        return BoardRecognizer.recognize(bmpFull, g, templates, threshold)
+        return BoardRecognizer.recognize(bmpFull, g, templates, threshold, 0)
     }
 
     /** 屏幕视角棋盘 → FEN（红下黑上） */

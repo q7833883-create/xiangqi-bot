@@ -123,8 +123,8 @@ object BoardLocator {
             }
             return if (sel.size >= 3) sel.sorted()[sel.size / 2] else null
         }
-        val fx0 = refine(votesX, bx.key, cw, true) ?: return null
-        val fy0 = refine(votesY, by.key, ch, false) ?: return null
+        val fx0 = refine(bx.key, cw, true) ?: return null
+        val fy0 = refine(by.key, ch, false) ?: return null
         // 校验：与初始网格偏移不能太离谱（< 2 格）
         if (kotlin.math.abs(fx0 - baseGrid.x0) > cw * 2.5f) return null
         if (kotlin.math.abs(fy0 - baseGrid.y0) > ch * 2.5f) return null

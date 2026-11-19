@@ -391,12 +391,12 @@ class AutoPlayService : Service() {
     private fun bundledGrid(): Grid? {
         return try {
             val meta = assets.open("templates/meta.json").bufferedReader().readText()
-            val arr = Regex("\"grid\":\s*\[([^\]]+)\]").find(meta)?.groupValues?.get(1) ?: return null
+            val arr = Regex("\"grid\": *\\[([^\\]]+)\\]").find(meta)?.groupValues?.get(1) ?: return null
             val v = arr.split(",").map { it.trim().toFloat() }
             if (v.size != 4) return null
             val dm = resources.displayMetrics
             // 内置网格基于 1264x2780 截图；按屏幕短边比例缩放
-            val scale = min(dm.widthPixels, 1264f).let { if (dm.widthPixels < 1264) dm.widthPixels / 1264f else 1f }
+            val scale = if (dm.widthPixels < 1264) dm.widthPixels / 1264f else 1f
             Grid(v[0] * scale, v[1] * scale, v[2] * scale, v[3] * scale)
         } catch (e: Exception) {
             null
