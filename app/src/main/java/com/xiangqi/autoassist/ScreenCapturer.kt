@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.res.Resources
 import android.graphics.Bitmap
 import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
 import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
@@ -20,7 +21,7 @@ class ScreenCapturer(
 ) {
     private val reader: ImageReader =
         ImageReader.newInstance(width, height, android.graphics.PixelFormat.RGBA_8888, 2)
-    private val display: android.view.VirtualDisplay
+    private val display: VirtualDisplay
 
     init {
         val dpi = Resources.getSystem().displayMetrics.densityDpi

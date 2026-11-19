@@ -122,7 +122,7 @@ object BoardRecognizer {
         val cyScale = 0.5f
         val maxOff = max(2, rad / 4)
         val step = 2
-        val best = HashMap<String, Float>(64)
+        val best = HashMap<Int, Float>(64)
         for (t in templates) {
             if (t.w > rad * 2 + 2 * maxOff || t.h > rad * 2 + 2 * maxOff) continue
             for (r in 0..9) {
@@ -194,7 +194,7 @@ object BoardRecognizer {
     }
 
     fun emptyBoard(): Array<Array<String?>> {
-        val b = arrayOfNulls<Array<String?>>(10)
+        val b: Array<Array<String?>> = Array(10) { arrayOfNulls<String?>(9) }
         for (r in 0..9) b[r] = arrayOfNulls(9)
         return b
     }

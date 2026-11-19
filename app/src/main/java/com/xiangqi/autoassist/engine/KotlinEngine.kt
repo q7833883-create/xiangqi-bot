@@ -31,21 +31,21 @@ class KotlinEngine(private val depth: Int = 3) : Engine {
         return p[0] in 'A'..'Z'
     }
 
-    /** JS: p.toUpperCase()（单字符） */
-    private fun upper(p: String): String = p.uppercaseChar().toString()
+    /** JS: p.toUpperCase()（单字符字母，ASCII 下与 locale 无关） */
+    private fun upper(p: String): String = p.uppercase()
 
     /** JS: function inPalace(r, c, red)：九宫判定（红 7..9 行，黑 0..2 行，列 3..5） */
     private fun inPalace(r: Int, c: Int, red: Boolean): Boolean =
         c in 3..5 && (if (red) r in 7..9 else r in 0..2)
 
     /** JS: var tgt = function (tr, tc) { var q = bd[tr][tc]; return !q || isRed(q) != red; } */
-    private fun tgt(bd: ChessLogic.Board, red: Boolean, tr: Int, tc: Int): Boolean {
+    private fun tgt(bd: Board, red: Boolean, tr: Int, tc: Int): Boolean {
         val q = bd[tr][tc]
         return q == null || isRed(q) != red
     }
 
     /** JS: function genMoves(bd, red)：生成所有伪合法招法（含飞将），不做送将过滤（由搜索惩罚） */
-    fun genMoves(bd: ChessLogic.Board, red: Boolean): MutableList<Move> {
+    fun genMoves(bd: Board, red: Boolean): MutableList<Move> {
         val moves = ArrayList<Move>()
         for (r in 0..9) for (c in 0..8) {
             val p = bd[r][c]
@@ -155,7 +155,7 @@ class KotlinEngine(private val depth: Int = 3) : Engine {
     }
 
     /** JS: function evaluate(bd)：红方视角子力估值（兵过河 +60、中兵 +10） */
-    fun evaluate(bd: ChessLogic.Board): Int {
+    fun evaluate(bd: Board): Int {
         var s = 0
         for (r in 0..9) for (c in 0..8) {
             val p = bd[r][c] ?: continue
@@ -172,7 +172,7 @@ class KotlinEngine(private val depth: Int = 3) : Engine {
     }
 
     /** JS: moves.sort((a, b2) => vb - va)：按吃掉的子力价值降序（稳定排序，空吃为 0） */
-    private fun capturedValue(bd: ChessLogic.Board, mv: Move): Int {
+    private fun capturedValue(bd: Board, mv: Move): Int {
         val q = bd[mv.tr][mv.tc] ?: return 0
         return VAL[upper(q)] ?: 0
     }
@@ -181,7 +181,7 @@ class KotlinEngine(private val depth: Int = 3) : Engine {
      * JS: function jsSearch(bd, depth, alpha, beta, red)
      * 用 Double 承载 α/β/分值，与 JS 的 Number（含 ±Infinity）语义完全一致。
      */
-    private fun jsSearch(bd: ChessLogic.Board, depth: Int, alphaIn: Double, beta: Double, red: Boolean): Double {
+    private fun jsSearch(bd: Board, depth: Int, alphaIn: Double, beta: Double, red: Boolean): Double {
         if (depth == 0) return (if (red) 1.0 else -1.0) * evaluate(bd)
         val moves = genMoves(bd, red)
         if (moves.isEmpty()) return -99999.0 + (10 - depth)

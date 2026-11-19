@@ -9,7 +9,7 @@ import org.junit.Test
  */
 class LogicAndEngineTest {
 
-    private fun startBoard(): ChessLogic.Board = ChessLogic.fenToBoard(ChessLogic.START_FEN + " w")
+    private fun startBoard(): Board = ChessLogic.fenToBoard(ChessLogic.START_FEN + " w")
 
     // 1) START_FEN 解析 → boardToFen 往返一致
     @Test
@@ -24,7 +24,7 @@ class LogicAndEngineTest {
     fun initialSquares_buildsStartFen() {
         val squares = ChessLogic.initialSquares()
         assertEquals(32, squares.size)
-        val bd: ChessLogic.Board = Array(10) { arrayOfNulls<String?>(9) }
+        val bd: Board = Array(10) { arrayOfNulls<String?>(9) }
         for ((r, c, code) in squares) {
             bd[r][c] = if (r <= 4) code.lowercase() else code   // 底部为红方视角
         }

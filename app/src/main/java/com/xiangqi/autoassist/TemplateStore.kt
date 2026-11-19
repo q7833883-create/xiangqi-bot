@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import com.xiangqi.autoassist.engine.ChessLogic
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.max
 
 /**
  * 模板存取：首次「提取棋子模板」时按标准初始布局裁图保存，

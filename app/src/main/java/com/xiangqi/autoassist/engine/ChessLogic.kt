@@ -9,12 +9,12 @@ package com.xiangqi.autoassist.engine
  *
  * 纯 Kotlin stdlib 实现，不依赖 android.*。
  */
+/** 棋盘类型：board[10][9]，元素为 FEN 字母（大写=红，小写=黑）或 null */
+typealias Board = Array<Array<String?>>
+
 object ChessLogic {
 
     const val START_FEN = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR"
-
-    /** 棋盘类型：board[10][9]，元素为 FEN 字母（大写=红，小写=黑）或 null */
-    typealias Board = Array<Array<String?>>
 
     data class PieceCount(val n: Int, val hasK: Boolean, val hask: Boolean)
 
