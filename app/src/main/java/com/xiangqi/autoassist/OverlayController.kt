@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ViewGroup
 import android.view.ViewConfiguration
+import android.content.Context
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
@@ -24,7 +25,7 @@ import kotlin.math.roundToInt
  * - 所有视图操作切主线程。
  */
 class OverlayController(
-    private val service: Service,
+    private val service: Context,
     private val onSuggest: () -> Unit,
     private val onModeSwitch: (String) -> Unit,
     private val onStop: () -> Unit
