@@ -31,6 +31,7 @@ class AutoPlayService : Service() {
         const val MODE_PLAY = "play"
         const val MODE_EXTRACT = "extract"
         const val MODE_HINT = "hint"
+        const val MODE_DETECT = "detect"
         const val EXTRA_MODE = "mode"
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT = "result"
@@ -125,12 +126,16 @@ class AutoPlayService : Service() {
             val metrics = ScreenCapturer.screenMetrics(this)
             capturer = ScreenCapturer(projection, metrics.widthPixels, metrics.heightPixels)
             engine = createEngine()
-            if (mode == MODE_EXTRACT) {
-                extractFlow()
-            } else if (mode == MODE_HINT) {
-                hintFlow()
-            } else {
-                playFlow(myTurnInit)
+            if (mode == MODE_DETECT) {
+                detectFlow()
+            } else if (ensureGrid()) {
+                if (mode == MODE_EXTRACT) {
+                    extractFlow()
+                } else if (mode == MODE_HINT) {
+                    hintFlow()
+                } else {
+                    playFlow(myTurnInit)
+                }
             }
         } catch (e: Exception) {
             setMsg("出错: ${e.message}")
@@ -320,6 +325,70 @@ class AutoPlayService : Service() {
             Pair(s.fr, s.fc), Pair(s.tr, s.tc),
             "建议 $name  $mv（点「算一招」刷新）"
         )
+    }
+
+    // ==================== 棋盘自动识别 ====================
+
+    /** 用当前截图自动定位棋盘（一次）；失败返回 null */
+    private fun detectOnce(): Grid? {
+        val cap = capturer ?: return null
+        val bmp = cap.latestBitmap() ?: return null
+        val grid = try {
+            val px = IntArray(bmp.width * bmp.height)
+            bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
+            val d = BoardDetector.detect(px, bmp.width, bmp.height)
+            if (d != null) Grid(d.x0, d.y0, d.x1, d.y1) else null
+        } catch (e: Exception) {
+            null
+        }
+        bmp.recycle()
+        return grid
+    }
+
+    /** 确保已有棋盘几何：优先用已保存的校准/识别结果，否则自动识别（最长 120s） */
+    private fun ensureGrid(): Boolean {
+        if (prefs.grid != null) return true
+        notify("正在自动识别棋盘…请切到棋盘界面")
+        setMsg("自动识别棋盘中…")
+        var waited = 0
+        while (running && waited < 120_000) {
+            val g = detectOnce()
+            if (g != null) {
+                prefs.grid = g
+                notify("棋盘识别成功：格宽 ${g.cellW.toInt()} 格高 ${g.cellH.toInt()}")
+                setMsg("棋盘识别成功")
+                return true
+            }
+            sleep(1000)
+            waited += 1000
+        }
+        if (running) {
+            notify("自动识别失败：请让棋盘界面完整可见后重试，或回 App 做一次「手动校准」")
+            setMsg("自动识别失败")
+        }
+        return false
+    }
+
+    /** 单独的「自动识别棋盘」流程：识别并保存，立即汇报 */
+    private fun detectFlow() {
+        notify("正在自动识别棋盘…请切到棋盘界面")
+        setMsg("自动识别棋盘中…")
+        var waited = 0
+        var found: Grid? = null
+        while (running && waited < 60_000) {
+            found = detectOnce()
+            if (found != null) break
+            sleep(1000)
+            waited += 1000
+        }
+        if (found != null) {
+            prefs.grid = found
+            notify("识别成功：左上(${found.x0.toInt()},${found.y0.toInt()}) 右下(${found.x1.toInt()},${found.y1.toInt()})")
+            setMsg("棋盘识别成功")
+        } else {
+            notify("识别失败：请让棋盘界面完整可见后重试，或用「手动校准」")
+            setMsg("自动识别失败")
+        }
     }
 
     // ==================== 落子 ====================
