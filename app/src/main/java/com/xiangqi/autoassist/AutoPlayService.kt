@@ -285,8 +285,8 @@ class AutoPlayService : Service() {
                     setMsg("对局结束")
                     return
                 }
-                val fp = ChessLogic.moveCells(mv, bottomIsRed)
-                overlay?.showSuggestion(cur, Pair(fp.first.first, fp.first.second), Pair(fp.second.first, fp.second.second), "已落子 $mv")
+                val sp = ChessLogic.engineMoveToScreen(mv, bottomIsRed)
+                overlay?.showSuggestion(cur, Pair(sp.fr, sp.fc), Pair(sp.tr, sp.tc), "已落子 $mv")
                 doMove(mv)
                 notify("已落子 $mv")
                 setMsg("已落子 $mv")
@@ -304,8 +304,6 @@ class AutoPlayService : Service() {
                 lastKey = k1
                 myTurn = true
                 overlay?.updateBoard(b2, "自动对弈：轮到我方，计算中…")
-            } else if (myTurn) {
-                overlay?.updateBoard(b2, "自动对弈：思考中…")
             }
         }
         setMsg("已停止")
@@ -346,7 +344,7 @@ class AutoPlayService : Service() {
                 .putExtra(EXTRA_MODE, m)
                 .putExtra(EXTRA_RESULT_CODE, st.second)
                 .putExtra(EXTRA_RESULT, st.third)
-                .putExtra(EXTRA_MY_TURN, prefs.myTurnFirst)
+                .putExtra(EXTRA_MY_TURN, true)
             onStartCommand(intent, 0, 0)
         }, 300)
     }
