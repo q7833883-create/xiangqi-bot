@@ -35,6 +35,10 @@ android {
             useLegacyPackaging = true
         }
     }
+    androidResources {
+        // NNUE 权重不压缩，保证运行时能通过 openFd 读取
+        noCompress.add("nnue")
+    }
 }
 
 dependencies {

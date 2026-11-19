@@ -299,8 +299,13 @@ class AutoPlayService : Service() {
     private fun copyNnueIfNeeded(): String? {
         val dst = File(filesDir, "pikafish.nnue")
         return try {
-            val assetSize = assets.openFd("pikafish.nnue").use { it.length }
-            if (!dst.exists() || dst.length() != assetSize) {
+            var expected = -1L
+            try {
+                assets.openFd("pikafish.nnue").use { expected = it.length }
+            } catch (e: Exception) {
+                // 资源被压缩时 openFd 不可用，忽略，仍走流复制
+            }
+            if (!dst.exists() || (expected > 0 && dst.length() != expected)) {
                 assets.open("pikafish.nnue").use { input ->
                     FileOutputStream(dst).use { out -> input.copyTo(out, 1 shl 16) }
                 }

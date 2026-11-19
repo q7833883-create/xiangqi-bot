@@ -1,0 +1,74 @@
+name: android-apk
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v3
+
+      - name: Fetch NNUE weights (official release, fallback Networks repo)
+        run: |
+          set -e
+          mkdir -p app/src/main/assets
+          ok=0
+          curl -sL --retry 3 --retry-delay 3 -o /tmp/pf.7z \
+            "https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2026-09-06/Pikafish.2026-09-06.7z" && ok=1
+          if [ "$ok" = "1" ]; then
+            (sudo apt-get update -qq; sudo apt-get install -y -qq p7zip-full) || true
+            mkdir -p /tmp/pf
+            if 7z x -y -o/tmp/pf /tmp/pf.7z > /dev/null; then
+              cp /tmp/pf/pikafish.nnue app/src/main/assets/pikafish.nnue && ok=2
+            fi
+          fi
+          if [ "$ok" != "2" ]; then
+            echo "== fallback: Networks repo =="
+            curl -sL --retry 5 --retry-delay 3 -o app/src/main/assets/pikafish.nnue \
+              "https://raw.githubusercontent.com/official-pikafish/Networks/master/pikafish.nnue"
+            if head -c 40 app/src/main/assets/pikafish.nnue | grep -q git-lfs; then
+              curl -sL --retry 5 --retry-delay 3 -o app/src/main/assets/pikafish.nnue \
+                "https://media.githubusercontent.com/media/official-pikafish/Networks/master/pikafish.nnue"
+            fi
+          fi
+          ls -la app/src/main/assets/
+
+      - name: Verify bundled engine binary
+        run: |
+          ls -la app/src/main/jniLibs/arm64-v8a/
+          file app/src/main/jniLibs/arm64-v8a/libpikafish.so || true
+
+      - name: Build (unit tests + debug APK)
+        run: |
+          gradle wrapper --gradle-version 8.9
+          ./gradlew --no-daemon testDebugUnitTest assembleDebug
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiangqi-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Create release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: xiangqi-autoassist v1.0.${{ github.run_number }}
+          body: |
+            Fully standalone native APK: embedded Pikafish engine + NNUE weights. No AutoX, no Termux.
+            - arm64-v8a (Android 8.0+)
+            - After install: enable AccessibilityService + overlay permission; calibrate board & extract templates on first use.
+          files: app/build/outputs/apk/debug/app-debug.apk
