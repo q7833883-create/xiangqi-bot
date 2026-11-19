@@ -365,10 +365,21 @@ class AutoPlayService : Service() {
         val cap = capturer ?: return null
         val bmp = cap.latestBitmap() ?: return null
         val grid = try {
-            val px = IntArray(bmp.width * bmp.height)
-            bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
-            val d = BoardDetector.detect(px, bmp.width, bmp.height)
-            if (d != null) Grid(d.x0, d.y0, d.x1, d.y1) else null
+            val tpls = TemplateStore.load(this)
+            // 路线 1：模板落位定位（棋子锚点投票，对遮挡/皮肤最稳）
+            var g: Grid? = null
+            val base = prefs.grid ?: bundledGrid()
+            if (tpls.size >= 14 && base != null) {
+                g = BoardLocator.locate(bmp, tpls, base, threshold = 0.60f)
+            }
+            // 路线 2：线投影检测器
+            if (g == null) {
+                val px = IntArray(bmp.width * bmp.height)
+                bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
+                val d = BoardDetector.detect(px, bmp.width, bmp.height)
+                if (d != null) g = Grid(d.x0, d.y0, d.x1, d.y1)
+            }
+            g
         } catch (e: Exception) {
             null
         }
@@ -376,9 +387,29 @@ class AutoPlayService : Service() {
         return grid
     }
 
+    /** 内置模板自带的参考网格（JJ 象棋 1264x2780 布局；其他分辨率按比例缩放） */
+    private fun bundledGrid(): Grid? {
+        return try {
+            val meta = assets.open("templates/meta.json").bufferedReader().readText()
+            val arr = Regex("\"grid\":\s*\[([^\]]+)\]").find(meta)?.groupValues?.get(1) ?: return null
+            val v = arr.split(",").map { it.trim().toFloat() }
+            if (v.size != 4) return null
+            val dm = resources.displayMetrics
+            // 内置网格基于 1264x2780 截图；按屏幕短边比例缩放
+            val scale = min(dm.widthPixels, 1264f).let { if (dm.widthPixels < 1264) dm.widthPixels / 1264f else 1f }
+            Grid(v[0] * scale, v[1] * scale, v[2] * scale, v[3] * scale)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     /** 确保已有棋盘几何：优先用已保存的校准/识别结果，否则自动识别（最长 120s） */
     private fun ensureGrid(): Boolean {
         if (prefs.grid != null) return true
+        // 有内置模板时直接用初始网格 + 落位校正（零配置路径）
+        if (TemplateStore.bundledAvailable(this) && prefs.grid == null) {
+            // 无初始网格：先用线检测，失败则内置 meta 网格兜底由首次识别建立
+        }
         notify("正在自动识别棋盘…请切到棋盘界面")
         setMsg("自动识别棋盘中…")
         var waited = 0

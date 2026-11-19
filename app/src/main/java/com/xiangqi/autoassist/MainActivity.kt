@@ -144,7 +144,7 @@ class MainActivity : Activity() {
         help.setPadding(0, dp(18), 0, 0)
         help.text = "使用流程：\n" +
                 "1. 开启无障碍服务（自动模式落子靠它）\n" +
-                "2. 自动识别棋盘（推荐）：切到象棋 App 棋盘界面即可，App 自动定位棋盘；识别失败时用「手动校准」\n" +
+                "2. 自动识别棋盘（推荐）：切到象棋 App 棋盘界面即可，App 自动定位棋盘（已内置 JJ 象棋模板，多数情况免校准免提取）；识别失败时用「手动校准」\n" +
                 "3. 提取模板：开一局标准初始对局，点本按钮后 10 秒内切到棋盘\n" +
                 "4. 自动模式：确认是否轮到你，然后切到棋盘界面挂机\n" +
                 "5. 指点模式：屏幕角落显示实时同步的悬浮棋盘，点「算一招」看建议招法（高亮起终点），由你自己落子\n" +
@@ -260,6 +260,19 @@ class MainActivity : Activity() {
     }
 
     private fun onExtract() {
+        if (TemplateStore.bundledAvailable(this)) {
+            AlertDialog.Builder(this)
+                .setTitle("已有内置模板")
+                .setMessage("已内置 JJ 象棋模板（14 枚），可直接开始对弈，无需提取。\n\n若你使用其他象棋 App 或皮肤，仍可在此重新提取。")
+                .setPositiveButton("重新提取") { _, _ -> doExtract() }
+                .setNegativeButton("取消", null)
+                .show()
+            return
+        }
+        doExtract()
+    }
+
+    private fun doExtract() {
         if (AutoPlayService.running) {
             toast("任务运行中，请先停止")
             return
@@ -270,7 +283,7 @@ class MainActivity : Activity() {
         }
         AlertDialog.Builder(this)
             .setTitle("提取棋子模板")
-            .setMessage("点击后请在 10 秒内切到象棋 App 的新对局（标准初始局面）界面，脚本会自动裁取 14 枚棋子模板。")
+            .setMessage("点击后请在 30 秒内切到象棋 App 的新对局（标准初始局面）界面，脚本会自动裁取 14 枚棋子模板。")
             .setPositiveButton("开始") { _, _ -> requestProjection(AutoPlayService.MODE_EXTRACT, false) }
             .setNegativeButton("取消", null)
             .show()
@@ -285,8 +298,8 @@ class MainActivity : Activity() {
             toast("先做「校准棋盘」")
             return
         }
-        if (TemplateStore.count(this) < 14) {
-            toast("先做「提取棋子模板」")
+        if (TemplateStore.count(this) < 14 && !TemplateStore.bundledAvailable(this)) {
+            toast("缺少棋子模板：先做「提取棋子模板」")
             return
         }
         if (!ensureAccessibility()) return
@@ -313,8 +326,8 @@ class MainActivity : Activity() {
             toast("先做「校准棋盘」")
             return
         }
-        if (TemplateStore.count(this) < 14) {
-            toast("先做「提取棋子模板」")
+        if (TemplateStore.count(this) < 14 && !TemplateStore.bundledAvailable(this)) {
+            toast("缺少棋子模板：先做「提取棋子模板」")
             return
         }
         requestProjection(AutoPlayService.MODE_HINT, false)
