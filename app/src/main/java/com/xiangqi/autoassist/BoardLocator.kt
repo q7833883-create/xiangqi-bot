@@ -19,7 +19,7 @@ object BoardLocator {
         templates: List<Template>,
         baseGrid: Grid,
         searchPad: Int = 200,
-        threshold: Float = 0.60f
+        threshold: Float = 0.52f
     ): Grid? {
         if (templates.size < 14) return null
         val reg = baseGrid.region()
@@ -113,7 +113,7 @@ object BoardLocator {
             }
             dy += step * 2
         }
-        if (bestN < 4) return null
+        if (bestN < 2) return null
 
         // 中位数细化（取一致锚点的平移量）
         val sxs = mutableListOf<Int>()
@@ -126,7 +126,7 @@ object BoardLocator {
                 sys.add(shiftY[r][c])
             }
         }
-        if (sxs.size < 4) return null
+        if (sxs.size < 2) return null
         sxs.sort()
         sys.sort()
         val mdx = sxs[sxs.size / 2].toFloat()

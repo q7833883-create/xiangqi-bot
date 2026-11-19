@@ -425,7 +425,7 @@ class AutoPlayService : Service() {
             var g: Grid? = null
             val base = prefs.grid ?: bundledGrid()
             if (tpls.size >= 14 && base != null) {
-                g = BoardLocator.locate(bmp, tpls, base, threshold = 0.60f)
+                g = BoardLocator.locate(bmp, tpls, base, threshold = 0.52f)
             }
             // 路线 2：线投影检测器
             if (g == null) {
