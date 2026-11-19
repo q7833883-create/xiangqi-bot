@@ -100,7 +100,8 @@ object BoardRecognizer {
         bmpFull: Bitmap,
         g: Grid,
         templates: List<Template>,
-        threshold: Float
+        threshold: Float,
+        maxOffOverride: Int = 0
     ): Array<Array<String?>> {
         val reg = g.region()
         // 半分辨率处理，加速
@@ -120,7 +121,7 @@ object BoardRecognizer {
         val rad = max(4, (min(g.cellW, g.cellH) * 0.44f * half).roundToInt())
         val cxScale = 0.5f
         val cyScale = 0.5f
-        val maxOff = max(2, rad / 4)
+        val maxOff = if (maxOffOverride > 0) maxOffOverride else max(2, rad / 4)
         val step = 2
         val best = HashMap<Int, Float>(64)
         for (t in templates) {

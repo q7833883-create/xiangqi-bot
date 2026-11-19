@@ -15,6 +15,8 @@ import android.os.HandlerThread
 import android.os.IBinder
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.random.Random
 import com.xiangqi.autoassist.engine.ChessLogic
 import com.xiangqi.autoassist.engine.Engine
@@ -448,7 +450,10 @@ class AutoPlayService : Service() {
         if (tpls.size < 14) return null
         val bmp = cap.latestBitmap() ?: return null
         val board = try {
-            BoardRecognizer.recognize(bmp, g, tpls, prefs.matchThreshold)
+            BoardRecognizer.recognize(
+                bmp, g, tpls, prefs.matchThreshold,
+                maxOffOverride = (min(g.cellW, g.cellH) * 0.25f).roundToInt()
+            )
         } catch (e: Exception) {
             null
         } finally {
