@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">象棋自动对弈助手</string>
+    <string name="a11y_desc">向其他应用的棋盘界面发送点击/滑动，用于自动落子</string>
+    <string name="stop_action">停止</string>
+    <string name="notif_channel">自动对弈运行状态</string>
+</resources>
