@@ -7,18 +7,23 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 /**
- * 校准悬浮窗（防误触 + 不干扰棋盘 App 版）：
+ * 校准悬浮窗（防误触 + 不干扰棋盘 App + 可拖动版）：
  * 1) 平时只显示一张小卡片（不整屏覆盖、FLAG_NOT_FOCUSABLE 不抢焦点），
  *    用户可以正常切换应用、在棋盘 App 里操作，不会导致其黑屏/暂停；
- * 2) 用户点「开始校准」后窗口扩展为全屏透明，捕获左上、右下两个交叉点；
- * 3) 记录完成后缩回卡片并弹出确认（显示坐标与格宽/格高），确认才保存。
+ * 2) 卡片阶段可拖动到任意位置；
+ * 3) 用户点「开始校准」后窗口扩展为全屏透明（复位到左上角），捕获左上、右下两个交叉点；
+ * 4) 记录完成后缩回卡片并弹出确认（显示坐标与格宽/格高），确认才保存。
  */
 object OverlayCalibrator {
 
@@ -36,6 +41,7 @@ object OverlayCalibrator {
         }
         val wm = activity.getSystemService(WindowManager::class.java)
         val dp = activity.resources.displayMetrics.density
+        val touchSlop = ViewConfiguration.get(activity).scaledTouchSlop
         fun px(v: Int): Int = (v * dp).toInt()
 
         val root = LinearLayout(activity)
@@ -103,12 +109,14 @@ object OverlayCalibrator {
         val taps = ArrayList<Pair<Float, Float>>(2)
         var grid: Grid? = null
 
-        /** 在小卡片与全屏采点模式之间切换 */
+        /** 在小卡片与全屏采点模式之间切换（进全屏时复位到左上角） */
         fun setFullscreen(fs: Boolean) {
             try {
                 if (fs) {
                     params.width = WindowManager.LayoutParams.MATCH_PARENT
                     params.height = WindowManager.LayoutParams.MATCH_PARENT
+                    params.x = 0
+                    params.y = 0
                 } else {
                     params.width = WindowManager.LayoutParams.WRAP_CONTENT
                     params.height = WindowManager.LayoutParams.WRAP_CONTENT
@@ -200,18 +208,63 @@ object OverlayCalibrator {
             renderButtons()
         }
 
+        // ===== 触摸：采点阶段捕获交叉点；卡片阶段可拖动 =====
+        var downX = 0f
+        var downY = 0f
+        var startX = 0
+        var startY = 0
+        var dragging = false
         root.setOnTouchListener { v, e ->
-            // 仅在全屏采点阶段捕获点击；卡片阶段不拦截任何触摸
-            if (phase == PHASE_ARMED && e.action == MotionEvent.ACTION_DOWN) {
-                taps.add(Pair(e.rawX, e.rawY))
-                if (taps.size == 1) {
-                    status.text = "已记录左上角 ✓，再点右下角交叉点"
-                } else if (taps.size >= 2) {
-                    grid = Prefs.gridOf(taps[0].first, taps[0].second, taps[1].first, taps[1].second)
-                    enterConfirm()
+            if (phase == PHASE_ARMED) {
+                // 全屏采点：捕获按下的坐标（子视图按钮优先，不会走到这里）
+                if (e.action == MotionEvent.ACTION_DOWN) {
+                    taps.add(Pair(e.rawX, e.rawY))
+                    if (taps.size == 1) {
+                        status.text = "已记录左上角 ✓，再点右下角交叉点"
+                    } else if (taps.size >= 2) {
+                        grid = Prefs.gridOf(taps[0].first, taps[0].second, taps[1].first, taps[1].second)
+                        enterConfirm()
+                    }
+                }
+                true
+            } else {
+                // 卡片阶段：拖动整窗
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = e.rawX
+                        downY = e.rawY
+                        startX = params.x
+                        startY = params.y
+                        dragging = false
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = e.rawX - downX
+                        val dy = e.rawY - downY
+                        if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                            dragging = true
+                        }
+                        if (dragging) {
+                            val screenW = v.resources.displayMetrics.widthPixels
+                            val screenH = v.resources.displayMetrics.heightPixels
+                            val maxX = max(0, screenW - v.width)
+                            val maxY = max(0, screenH - v.height)
+                            params.x = (startX + dx.roundToInt()).coerceIn(0, maxX)
+                            params.y = (startY + dy.roundToInt()).coerceIn(0, maxY)
+                            try {
+                                wm.updateViewLayout(v, params)
+                            } catch (e2: Exception) {
+                            }
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        dragging = false
+                        true
+                    }
+                    else -> false
                 }
             }
-            true
         }
 
         // 初始状态

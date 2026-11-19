@@ -67,8 +67,13 @@ class MainActivity : Activity() {
         box.setPadding(dp(20), dp(28), dp(20), dp(28))
         root.addView(box)
 
+        val ver = try {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (e: Exception) {
+            "?"
+        }
         val title = TextView(ctx)
-        title.text = "象棋自动对弈助手"
+        title.text = "象棋自动对弈助手 v$ver"
         title.textSize = 22f
         title.setTextColor(0xFF1E2D24.toInt())
         box.addView(title)
