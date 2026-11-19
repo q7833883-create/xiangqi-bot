@@ -108,8 +108,8 @@ class HintOverlay(
         }
     }
 
-    /** 同步识别到的棋盘（清空建议高亮） */
-    fun updateBoard(board: Array<Array<String?>>, status: String) {
+    /** 同步识别到的棋盘（清空建议高亮）；board 允许为 null（尚未识别到） */
+    fun updateBoard(board: Array<Array<String?>>?, status: String) {
         main.post {
             boardView?.setData(board, null, null, status)
         }

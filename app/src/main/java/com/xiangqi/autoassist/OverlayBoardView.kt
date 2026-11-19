@@ -36,7 +36,7 @@ class OverlayBoardView(context: Context) : View(context) {
         color = 0xFFD84315.toInt()
         strokeWidth = 2.2f * dp
         style = Paint.Style.STROKE
-        pathEffect = android.graphics.DashPathEffect(floatArrayOf(6 * dp, 5 * dp))
+        pathEffect = android.graphics.DashPathEffect(floatArrayOf(6 * dp, 5 * dp), 0f)
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
