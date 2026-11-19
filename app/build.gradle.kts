@@ -11,8 +11,8 @@ android {
         applicationId = "com.xiangqi.autoassist"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.4.0"
+        versionCode = 9
+        versionName = "1.5.0"
     }
 
     buildTypes {
