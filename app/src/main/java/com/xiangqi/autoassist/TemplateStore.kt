@@ -150,8 +150,8 @@ object TemplateStore {
         return BoardRecognizer.recognize(bmpFull, g, templates, threshold)
     }
 
-    /** 屏幕视角棋盘 → FEN（红下黑上） */
+    /** 屏幕视角棋盘 → FEN（红下黑上，默认红方行棋） */
     fun boardToFen(board: Array<Array<String?>>, bottomIsRed: Boolean): String {
-        return ChessLogic.boardToFen(board, bottomIsRed)
+        return ChessLogic.boardToFen(board, if (bottomIsRed) "w" else "b")
     }
 }
