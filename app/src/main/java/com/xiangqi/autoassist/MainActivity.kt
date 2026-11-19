@@ -24,6 +24,8 @@ import android.widget.Toast
 import java.io.File
 
 class MainActivity : Activity() {
+    private var idleOverlay: OverlayController? = null
+
 
     companion object {
         const val REQ_CAPTURE = 1001
