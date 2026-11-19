@@ -14,10 +14,11 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * 校准悬浮窗（防误触版）：
- * 1) 显示说明卡片，用户切到棋盘界面后主动点「开始校准」才进入监听；
- * 2) 监听中依次记录左上、右下两个交叉点（开始前的点击一律忽略）；
- * 3) 记录完成后弹出确认（显示坐标与格宽/格高），确认才保存，可重来/放弃。
+ * 校准悬浮窗（防误触 + 不干扰棋盘 App 版）：
+ * 1) 平时只显示一张小卡片（不整屏覆盖、FLAG_NOT_FOCUSABLE 不抢焦点），
+ *    用户可以正常切换应用、在棋盘 App 里操作，不会导致其黑屏/暂停；
+ * 2) 用户点「开始校准」后窗口扩展为全屏透明，捕获左上、右下两个交叉点；
+ * 3) 记录完成后缩回卡片并弹出确认（显示坐标与格宽/格高），确认才保存。
  */
 object OverlayCalibrator {
 
@@ -87,11 +88,13 @@ object OverlayCalibrator {
             ).apply { setMargins(px(10), px(60), px(10), 0) }
         )
 
+        // 小卡片窗口：不抢焦点、不整屏覆盖——否则棋盘 App 会因失焦黑屏/暂停
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         )
         params.gravity = Gravity.TOP or Gravity.START
@@ -99,6 +102,21 @@ object OverlayCalibrator {
         var phase = PHASE_IDLE
         val taps = ArrayList<Pair<Float, Float>>(2)
         var grid: Grid? = null
+
+        /** 在小卡片与全屏采点模式之间切换 */
+        fun setFullscreen(fs: Boolean) {
+            try {
+                if (fs) {
+                    params.width = WindowManager.LayoutParams.MATCH_PARENT
+                    params.height = WindowManager.LayoutParams.MATCH_PARENT
+                } else {
+                    params.width = WindowManager.LayoutParams.WRAP_CONTENT
+                    params.height = WindowManager.LayoutParams.WRAP_CONTENT
+                }
+                wm.updateViewLayout(root, params)
+            } catch (e: Exception) {
+            }
+        }
 
         fun exit(result: Grid?, message: String) {
             try { wm.removeView(root) } catch (e: Exception) {}
@@ -135,6 +153,7 @@ object OverlayCalibrator {
                         phase = PHASE_ARMED
                         taps.clear()
                         status.text = "已就绪：请点左上角交叉点"
+                        setFullscreen(true)
                         renderButtons()
                     },
                     "放弃" to { exit(null, "校准已取消") }
@@ -149,6 +168,7 @@ object OverlayCalibrator {
                         taps.clear()
                         grid = null
                         status.text = "已就绪：请点左上角交叉点"
+                        setFullscreen(true)
                         renderButtons()
                     },
                     "放弃" to { exit(null, "校准已取消") }
@@ -159,7 +179,7 @@ object OverlayCalibrator {
         fun refreshTexts() {
             when (phase) {
                 PHASE_IDLE -> {
-                    tip.text = "① 切到象棋 App 的棋盘界面\n② 回这里点「开始校准」\n③ 在棋盘上依次点：左上角交叉点、右下角交叉点\n（开始前，其他点击都会被忽略，不怕误触）"
+                    tip.text = "① 切到象棋 App 的棋盘界面（期间可正常操作它）\n② 回这里点「开始校准」\n③ 在棋盘上依次点：左上角交叉点、右下角交叉点\n（开始前，其他点击都会被忽略，不怕误触）"
                     status.text = ""
                 }
                 PHASE_ARMED -> {
@@ -174,12 +194,14 @@ object OverlayCalibrator {
         fun enterConfirm() {
             phase = PHASE_CONFIRM
             val g = grid!!
+            setFullscreen(false)
             status.text = describe(g)
             refreshTexts()
             renderButtons()
         }
 
         root.setOnTouchListener { v, e ->
+            // 仅在全屏采点阶段捕获点击；卡片阶段不拦截任何触摸
             if (phase == PHASE_ARMED && e.action == MotionEvent.ACTION_DOWN) {
                 taps.add(Pair(e.rawX, e.rawY))
                 if (taps.size == 1) {
