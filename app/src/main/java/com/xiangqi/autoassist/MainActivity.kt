@@ -88,6 +88,7 @@ class MainActivity : Activity() {
         box.addView(button("校准棋盘") { onCalibrate() })
         box.addView(button("提取棋子模板") { onExtract() })
         box.addView(button("开始自动对弈") { onPlay() })
+        box.addView(button("指点模式（只提示，我自己走）") { onHint() })
         box.addView(button("停止") { onStopClick() })
 
         val row = LinearLayout(ctx)
@@ -136,11 +137,12 @@ class MainActivity : Activity() {
         help.setTextColor(0xFF444444.toInt())
         help.setPadding(0, dp(18), 0, 0)
         help.text = "使用流程：\n" +
-                "1. 开启无障碍服务（落子点击靠它）\n" +
+                "1. 开启无障碍服务（自动模式落子靠它）\n" +
                 "2. 校准棋盘：切到象棋 App 棋盘界面，点左上、右下两个交叉点\n" +
                 "3. 提取模板：开一局标准初始对局，点本按钮后 10 秒内切到棋盘\n" +
-                "4. 开始自动对弈：确认是否轮到你，然后切到棋盘界面挂机\n" +
-                "5. 停止：按音量上键，或回本 App 点「停止」\n\n" +
+                "4. 自动模式：确认是否轮到你，然后切到棋盘界面挂机\n" +
+                "5. 指点模式：屏幕角落显示实时同步的悬浮棋盘，点「算一招」看建议招法（高亮起终点），由你自己落子\n" +
+                "6. 停止：按音量上键，或回本 App 点「停止」\n\n" +
                 "仅支持竖屏、正视角、圆形棋子的标准 9×10 棋盘。模板/校准数据存在本应用私有目录，换皮肤或分辨率后重新校准提取。"
         box.addView(help)
         return root
@@ -281,6 +283,22 @@ class MainActivity : Activity() {
                 requestProjection(AutoPlayService.MODE_PLAY, false)
             }
             .show()
+    }
+
+    private fun onHint() {
+        if (AutoPlayService.running) {
+            toast("任务运行中，请先停止")
+            return
+        }
+        if (prefs.grid == null) {
+            toast("先做「校准棋盘」")
+            return
+        }
+        if (TemplateStore.count(this) < 14) {
+            toast("先做「提取棋子模板」")
+            return
+        }
+        requestProjection(AutoPlayService.MODE_HINT, false)
     }
 
     private fun onStopClick() {

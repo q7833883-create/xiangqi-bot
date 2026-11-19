@@ -23,13 +23,14 @@ import com.xiangqi.autoassist.engine.PikafishEngine
 
 /**
  * 自动对弈前台服务：截屏识别 → 引擎算招 → 无障碍落子。
- * 也承担「提取模板」的一次性任务（mode=extract）。
+ * 也承担「提取模板」（mode=extract）与「指点模式」（mode=hint，只显示不落子）。
  */
 class AutoPlayService : Service() {
 
     companion object {
         const val MODE_PLAY = "play"
         const val MODE_EXTRACT = "extract"
+        const val MODE_HINT = "hint"
         const val EXTRA_MODE = "mode"
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT = "result"
@@ -57,6 +58,11 @@ class AutoPlayService : Service() {
     private var capturer: ScreenCapturer? = null
     private var engine: Engine? = null
     private var worker: HandlerThread? = null
+    private var workerHandler: Handler? = null
+    private var hintOverlay: HintOverlay? = null
+
+    @Volatile
+    private var stableBoard: Array<Array<String?>>? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -98,7 +104,8 @@ class AutoPlayService : Service() {
         val t = HandlerThread("xq-loop")
         worker = t
         t.start()
-        Handler(t.looper).post {
+        workerHandler = Handler(t.looper)
+        workerHandler!!.post {
             runLoop(mode, resultCode, resultData, myTurn)
         }
         return START_NOT_STICKY
@@ -120,6 +127,8 @@ class AutoPlayService : Service() {
             engine = createEngine()
             if (mode == MODE_EXTRACT) {
                 extractFlow()
+            } else if (mode == MODE_HINT) {
+                hintFlow()
             } else {
                 playFlow(myTurnInit)
             }
@@ -162,26 +171,28 @@ class AutoPlayService : Service() {
         setMsg(result.second)
     }
 
-    private fun playFlow(myTurnInit: Boolean) {
-        val bottomIsRed = prefs.bottomIsRed
-        val mySide = if (bottomIsRed) "w" else "b"
-        notify("等待棋盘…请切换到象棋 App 的棋盘界面（音量上键停止）")
-        setMsg("等待棋盘…")
-        // 等待出现真实棋盘（双方都有将帅且棋子数足够）
-        var first = tryRecognize()
+    /** 等待出现真实棋盘（双方将帅都在且棋子数足够），超时返回 null */
+    private fun waitForBoard(): Array<Array<String?>>? {
         var waited = 0
         while (running && waited < 120_000) {
             val b = tryRecognize()
             if (b != null) {
                 val chk = ChessLogic.countPieces(b)
-                if (chk.hasK && chk.hask && chk.n >= 6) {
-                    first = b
-                    break
-                }
+                if (chk.hasK && chk.hask && chk.n >= 6) return b
             }
-            sleep(if (prefs.pollMs < 300) 300 else prefs.pollMs)
-            waited += if (prefs.pollMs < 300) 300 else prefs.pollMs
+            val p = if (prefs.pollMs < 300) 300 else prefs.pollMs
+            sleep(p)
+            waited += p
         }
+        return null
+    }
+
+    private fun playFlow(myTurnInit: Boolean) {
+        val bottomIsRed = prefs.bottomIsRed
+        val mySide = if (bottomIsRed) "w" else "b"
+        notify("等待棋盘…请切换到象棋 App 的棋盘界面（音量上键停止）")
+        setMsg("等待棋盘…")
+        val first = waitForBoard()
         if (!running) return
         if (first == null) {
             notify("未识别到棋盘，停止")
@@ -239,6 +250,76 @@ class AutoPlayService : Service() {
             }
         }
         setMsg("已停止")
+    }
+
+    // ==================== 指点模式 ====================
+
+    private fun hintFlow() {
+        val bottomIsRed = prefs.bottomIsRed
+        val mySide = if (bottomIsRed) "w" else "b"
+        notify("等待棋盘…请切换到象棋 App 的棋盘界面")
+        setMsg("等待棋盘…")
+        val first = waitForBoard()
+        if (!running) return
+        if (first == null) {
+            notify("未识别到棋盘，停止")
+            setMsg("未识别到棋盘")
+            return
+        }
+        stableBoard = first
+        hintOverlay = HintOverlay(
+            this,
+            onSuggest = {
+                workerHandler?.post { computeSuggestion(bottomIsRed, mySide) }
+            },
+            onStop = { requestStop() }
+        ).also { it.show() }
+        hintOverlay?.updateBoard(first, "棋盘已同步")
+        notify("指点模式运行中：悬浮棋盘实时同步，点「算一招」获取建议")
+        setMsg("指点模式运行中")
+        var lastKey = ChessLogic.boardKey(first)
+        while (running) {
+            sleep(prefs.pollMs)
+            val b1 = tryRecognize() ?: continue
+            val k1 = ChessLogic.boardKey(b1)
+            if (k1 == lastKey) continue
+            sleep(500)
+            val b2 = tryRecognize() ?: continue
+            if (ChessLogic.boardKey(b2) != k1) continue
+            lastKey = k1
+            stableBoard = b2
+            hintOverlay?.updateBoard(b2, "棋盘已同步")
+        }
+        setMsg("已停止")
+    }
+
+    /** 对当前识别到的局面求一步建议，并在悬浮棋盘上高亮 */
+    private fun computeSuggestion(bottomIsRed: Boolean, mySide: String) {
+        val b = stableBoard
+        if (b == null) {
+            hintOverlay?.updateBoard(null, "还没识别到棋盘")
+            return
+        }
+        hintOverlay?.updateBoard(b, "思考中…")
+        val fen = ChessLogic.boardToFen(ChessLogic.toCanonical(b, bottomIsRed), mySide)
+        val mv = try {
+            engine?.bestMove(fen, prefs.movetimeMs)
+        } catch (e: Exception) {
+            hintOverlay?.updateBoard(b, "引擎出错: ${e.message}")
+            return
+        }
+        if (mv == null) {
+            hintOverlay?.updateBoard(b, "无招可走（将死/困毙）")
+            return
+        }
+        val s = ChessLogic.engineMoveToScreen(mv, bottomIsRed)
+        val piece = b[s.fr][s.fc]
+        val name = if (piece != null) OverlayBoardView.pieceCharOf(piece) else "?"
+        hintOverlay?.showSuggestion(
+            b,
+            Pair(s.fr, s.fc), Pair(s.tr, s.tc),
+            "建议 $name  $mv（点「算一招」刷新）"
+        )
     }
 
     // ==================== 落子 ====================
@@ -351,12 +432,15 @@ class AutoPlayService : Service() {
 
     private fun stopAll() {
         running = false
+        try { hintOverlay?.hide() } catch (e: Exception) {}
+        hintOverlay = null
         try { capturer?.close() } catch (e: Exception) {}
         capturer = null
         try { engine?.close() } catch (e: Exception) {}
         engine = null
         try { worker?.quitSafely() } catch (e: Exception) {}
         worker = null
+        workerHandler = null
         try {
             if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE)
             else @Suppress("DEPRECATION") stopForeground(true)
