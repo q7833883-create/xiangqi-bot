@@ -49,9 +49,13 @@ class AutoPlayService : Service() {
             private set
 
         fun requestStop() {
-            stopRequested = true
+            stopFlag = true
             running = false
         }
+
+        @Volatile
+        var stopFlag: Boolean = false
+            private set
 
         private fun setMsg(s: String) {
             lastMessage = s
@@ -65,8 +69,6 @@ class AutoPlayService : Service() {
     private var workerHandler: Handler? = null
     private var overlay: OverlayController? = null
     private var lastStart: Triple<String, Int, Intent>? = null
-    @Volatile
-    private var stopRequested = false
     private var curMode: String = MODE_PLAY
 
     @Volatile
@@ -94,7 +96,7 @@ class AutoPlayService : Service() {
         if (running) return START_NOT_STICKY
         val mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_PLAY
         curMode = mode
-        stopRequested = false
+        stopFlag = false
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         @Suppress("DEPRECATION")
         val resultData = intent?.getParcelableExtra<Intent>(EXTRA_RESULT)
@@ -338,7 +340,7 @@ class AutoPlayService : Service() {
         val keep = overlay
         overlay = null
         running = false
-        stopRequested = false
+        stopFlag = false
         workerHandler?.postDelayed({
             val intent = Intent(this, AutoPlayService::class.java)
                 .putExtra(EXTRA_MODE, m)
