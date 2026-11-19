@@ -49,6 +49,7 @@ class AutoPlayService : Service() {
             private set
 
         fun requestStop() {
+            stopRequested = true
             running = false
         }
 
@@ -62,7 +63,11 @@ class AutoPlayService : Service() {
     private var engine: Engine? = null
     private var worker: HandlerThread? = null
     private var workerHandler: Handler? = null
-    private var hintOverlay: HintOverlay? = null
+    private var overlay: OverlayController? = null
+    private var lastStart: Triple<String, Int, Intent>? = null
+    @Volatile
+    private var stopRequested = false
+    private var curMode: String = MODE_PLAY
 
     @Volatile
     private var stableBoard: Array<Array<String?>>? = null
@@ -88,6 +93,8 @@ class AutoPlayService : Service() {
         }
         if (running) return START_NOT_STICKY
         val mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_PLAY
+        curMode = mode
+        stopRequested = false
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         @Suppress("DEPRECATION")
         val resultData = intent?.getParcelableExtra<Intent>(EXTRA_RESULT)
@@ -97,6 +104,7 @@ class AutoPlayService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        lastStart = Triple(mode, resultCode, resultData)
         val notif = buildNotification(if (mode == MODE_EXTRACT) "提取模板中…" else "启动中…")
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(1, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
@@ -144,7 +152,15 @@ class AutoPlayService : Service() {
             notify("出错: ${e.message}")
         } finally {
             running = false
-            stopAll()
+            if (overlay != null) {
+                // 模式切换：保留悬浮窗（新流程会复用），只清理循环相关资源
+                worker?.quitSafely()
+                worker = null
+                workerHandler = null
+                // capturer/engine 保留复用（同一 MediaProjection）
+            } else {
+                stopAll()
+            }
         }
     }
 
@@ -235,6 +251,7 @@ class AutoPlayService : Service() {
             setMsg("未识别到棋盘")
             return
         }
+        ensureOverlay(bottomIsRed, mySide, startAuto = true)
         notify("自动对弈启动，我方为" + if (bottomIsRed) "红方" else "黑方" + "。音量上键停止")
         setMsg("自动对弈运行中")
         var myTurn = myTurnInit
@@ -253,6 +270,7 @@ class AutoPlayService : Service() {
                     return
                 }
                 val fen = ChessLogic.boardToFen(ChessLogic.toCanonical(cur, bottomIsRed), mySide)
+                overlay?.updateBoard(cur, "自动对弈：思考中…")
                 notify("思考中…")
                 val mv = try {
                     engine?.bestMove(fen, prefs.movetimeMs)
@@ -267,6 +285,8 @@ class AutoPlayService : Service() {
                     setMsg("对局结束")
                     return
                 }
+                val fp = ChessLogic.moveCells(mv, bottomIsRed)
+                overlay?.showSuggestion(cur, Pair(fp.first.first, fp.first.second), Pair(fp.second.first, fp.second.second), "已落子 $mv")
                 doMove(mv)
                 notify("已落子 $mv")
                 setMsg("已落子 $mv")
@@ -283,12 +303,53 @@ class AutoPlayService : Service() {
                 if (b2 == null || ChessLogic.boardKey(b2) != k1) continue
                 lastKey = k1
                 myTurn = true
+                overlay?.updateBoard(b2, "自动对弈：轮到我方，计算中…")
+            } else if (myTurn) {
+                overlay?.updateBoard(b2, "自动对弈：思考中…")
             }
         }
         setMsg("已停止")
     }
 
     // ==================== 指点模式 ====================
+
+    /** 确保常驻悬浮窗存在（自动/指点共用） */
+    private fun ensureOverlay(bottomIsRed: Boolean, mySide: String, startAuto: Boolean) {
+        if (overlay != null) {
+            overlay?.updateStatus(if (startAuto) "自动对弈运行中" else "指点模式运行中")
+            return
+        }
+        overlay = OverlayController(
+            this,
+            onSuggest = {
+                workerHandler?.post { computeSuggestion(bottomIsRed, mySide) }
+            },
+            onModeSwitch = { m ->
+                workerHandler?.post { switchMode(m) }
+            },
+            onStop = { requestStop() }
+        ).also { it.show(startAuto) }
+    }
+
+    /** 运行中切换模式：play ⇄ hint（重启流程，保留悬浮窗） */
+    private fun switchMode(m: String) {
+        if (m == curMode) return
+        val st = lastStart ?: return
+        notify("切换到" + if (m == MODE_PLAY) "自动对弈" else "指点模式")
+        // 保留悬浮窗：置空引用，让新流程复用
+        val keep = overlay
+        overlay = null
+        running = false
+        stopRequested = false
+        workerHandler?.postDelayed({
+            val intent = Intent(this, AutoPlayService::class.java)
+                .putExtra(EXTRA_MODE, m)
+                .putExtra(EXTRA_RESULT_CODE, st.second)
+                .putExtra(EXTRA_RESULT, st.third)
+                .putExtra(EXTRA_MY_TURN, prefs.myTurnFirst)
+            onStartCommand(intent, 0, 0)
+        }, 300)
+    }
 
     private fun hintFlow() {
         val bottomIsRed = prefs.bottomIsRed
@@ -303,15 +364,9 @@ class AutoPlayService : Service() {
             return
         }
         stableBoard = first
-        hintOverlay = HintOverlay(
-            this,
-            onSuggest = {
-                workerHandler?.post { computeSuggestion(bottomIsRed, mySide) }
-            },
-            onStop = { requestStop() }
-        ).also { it.show() }
-        hintOverlay?.updateBoard(first, "棋盘已同步")
-        notify("指点模式运行中：悬浮棋盘实时同步，点「算一招」获取建议")
+        ensureOverlay(bottomIsRed, mySide, startAuto = false)
+        overlay?.updateBoard(first, "指点模式：棋盘已同步（点「算一招」看建议，可切自动）")
+        notify("指点模式运行中：悬浮棋盘实时同步，可随时切换自动")
         setMsg("指点模式运行中")
         var lastKey = ChessLogic.boardKey(first)
         while (running) {
@@ -324,7 +379,7 @@ class AutoPlayService : Service() {
             if (ChessLogic.boardKey(b2) != k1) continue
             lastKey = k1
             stableBoard = b2
-            hintOverlay?.updateBoard(b2, "棋盘已同步")
+            overlay?.updateBoard(b2, "棋盘已同步")
         }
         setMsg("已停止")
     }
@@ -333,25 +388,25 @@ class AutoPlayService : Service() {
     private fun computeSuggestion(bottomIsRed: Boolean, mySide: String) {
         val b = stableBoard
         if (b == null) {
-            hintOverlay?.updateBoard(null, "还没识别到棋盘")
+            overlay?.updateBoard(null, "还没识别到棋盘")
             return
         }
-        hintOverlay?.updateBoard(b, "思考中…")
+        overlay?.updateBoard(b, "思考中…")
         val fen = ChessLogic.boardToFen(ChessLogic.toCanonical(b, bottomIsRed), mySide)
         val mv = try {
             engine?.bestMove(fen, prefs.movetimeMs)
         } catch (e: Exception) {
-            hintOverlay?.updateBoard(b, "引擎出错: ${e.message}")
+            overlay?.updateBoard(b, "引擎出错: ${e.message}")
             return
         }
         if (mv == null) {
-            hintOverlay?.updateBoard(b, "无招可走（将死/困毙）")
+            overlay?.updateBoard(b, "无招可走（将死/困毙）")
             return
         }
         val s = ChessLogic.engineMoveToScreen(mv, bottomIsRed)
         val piece = b[s.fr][s.fc]
         val name = if (piece != null) OverlayBoardView.pieceCharOf(piece) else "?"
-        hintOverlay?.showSuggestion(
+        overlay?.showSuggestion(
             b,
             Pair(s.fr, s.fc), Pair(s.tr, s.tc),
             "建议 $name  $mv（点「算一招」刷新）"
@@ -566,8 +621,8 @@ class AutoPlayService : Service() {
 
     private fun stopAll() {
         running = false
-        try { hintOverlay?.hide() } catch (e: Exception) {}
-        hintOverlay = null
+        try { overlay?.dismiss() } catch (e: Exception) {}
+        overlay = null
         try { capturer?.close() } catch (e: Exception) {}
         capturer = null
         try { engine?.close() } catch (e: Exception) {}
