@@ -146,16 +146,44 @@ class AutoPlayService : Service() {
         }
     }
 
+    /** 最近一帧的平均亮度（诊断用：≈0 说明截屏是黑屏） */
+    private fun frameBrightness(): Int {
+        val cap = capturer ?: return -1
+        val bmp = cap.latestBitmap() ?: return -1
+        var sum = 0L
+        var n = 0
+        var y = 0
+        val stepY = 16
+        while (y < bmp.height) {
+            var x = 0
+            while (x < bmp.width) {
+                val p = bmp.getPixel(x, y)
+                sum += ((p shr 16) and 0xFF) + ((p shr 8) and 0xFF) + (p and 0xFF)
+                n++
+                x += 128
+            }
+            y += stepY
+        }
+        bmp.recycle()
+        return if (n == 0) -1 else (sum / (3L * n)).toInt()
+    }
+
+    private fun diag(): String {
+        val b = frameBrightness()
+        return if (b in 0..8) "；诊断：截屏亮度=$b（接近全黑，说明该应用禁止截屏或截屏失败）"
+        else "；诊断：截屏亮度=$b（正常范围，排除黑屏问题）"
+    }
+
     private fun extractFlow() {
-        for (i in 10 downTo 1) {
-            notify("提取模板：${i}s 后识别，请切到棋盘新对局界面")
+        for (i in 30 downTo 1) {
+            if (i % 5 == 0 || i <= 3) notify("提取模板：${i}s 后识别，请切到棋盘新对局界面")
             sleep(1000)
             if (!running) return
         }
         val g = prefs.grid
         if (g == null) {
-            notify("先做「校准棋盘」")
-            setMsg("缺少校准")
+            notify("先做「自动识别棋盘」或手动校准")
+            setMsg("缺少棋盘数据")
             return
         }
         var bmp = capturer?.latestBitmap()
@@ -166,14 +194,15 @@ class AutoPlayService : Service() {
             tries++
         }
         if (bmp == null) {
-            notify("截图失败，请重试")
+            notify("截图失败，请重试" + diag())
             setMsg("截图失败")
             return
         }
         val result = TemplateStore.extractFromScreenshot(this, bmp, g, prefs)
         bmp.recycle()
-        notify(result.second)
-        setMsg(result.second)
+        val msg = if (result.first) result.second else result.second + diag()
+        notify(msg)
+        setMsg(msg)
     }
 
     /** 等待出现真实棋盘（双方将帅都在且棋子数足够），超时返回 null */
@@ -363,7 +392,7 @@ class AutoPlayService : Service() {
             waited += 1000
         }
         if (running) {
-            notify("自动识别失败：请让棋盘界面完整可见后重试，或回 App 做一次「手动校准」")
+            notify("自动识别失败（${waited / 1000}s 内未找到棋盘）" + diag() + "；也可回 App 做「手动校准」")
             setMsg("自动识别失败")
         }
         return false
@@ -386,7 +415,7 @@ class AutoPlayService : Service() {
             notify("识别成功：左上(${found.x0.toInt()},${found.y0.toInt()}) 右下(${found.x1.toInt()},${found.y1.toInt()})")
             setMsg("棋盘识别成功")
         } else {
-            notify("识别失败：请让棋盘界面完整可见后重试，或用「手动校准」")
+            notify("识别失败：60s 内未找到棋盘" + diag() + "；可改用「手动校准」")
             setMsg("自动识别失败")
         }
     }
