@@ -53,6 +53,38 @@ class MainActivity : Activity() {
         super.onResume()
         refreshStatus()
         logView.text = AutoPlayService.lastMessage
+        maybeShowIdleOverlay()
+    }
+
+    /** 进 App 即显示待机悬浮窗（有悬浮窗权限即可；任务运行时由服务接管） */
+    private fun maybeShowIdleOverlay() {
+        if (AutoPlayService.running) return
+        if (!Settings.canDrawOverlays(this)) return
+        if (idleOverlay == null) {
+            idleOverlay = OverlayController(
+                this,
+                onSuggest = { toast("先启动「指点模式」或「自动对弈」才能识别与计算") },
+                onModeSwitch = { m ->
+                    if (prefs.grid == null) {
+                        toast("先做一次「自动识别棋盘」")
+                    } else {
+                        toast("请从主界面启动该模式（需要截图授权）")
+                    }
+                },
+                onStop = { hideIdleOverlay() }
+            )
+        }
+        idleOverlay?.showIdle()
+    }
+
+    private fun hideIdleOverlay() {
+        try { idleOverlay?.dismiss() } catch (e: Exception) {}
+        idleOverlay = null
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        hideIdleOverlay()
     }
 
     // ==================== 界面 ====================

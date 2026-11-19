@@ -40,14 +40,30 @@ class OverlayController(
     private var added = false
     private var autoMode = false
 
+    /** 待机模式（主界面进 App 即显示）：只显示按钮面板与提示，不做识别 */
     fun show(startAuto: Boolean) {
         autoMode = startAuto
         main.post {
-            if (added) {
-                updateModeButton()
-                return@post
+            ensureViews()
+            updateModeButton()
+            if (startAuto) {
+                statusView?.text = "自动对弈：等待识别…"
             }
-            val ctx = service
+        }
+    }
+
+    fun showIdle() {
+        autoMode = false
+        main.post {
+            ensureViews()
+            updateModeButton()
+            statusView?.text = "待机中：识别/对弈启动后自动同步棋盘"
+        }
+    }
+
+    private fun ensureViews() {
+        if (added) return
+        val ctx = service
             val root = LinearLayout(ctx)
             root.orientation = LinearLayout.VERTICAL
             root.setPadding(10, 10, 10, 10)
@@ -160,7 +176,6 @@ class OverlayController(
             } catch (e: Exception) {
             }
         }
-    }
 
     private fun mkButton(ctx: android.content.Context, text: String, onClick: () -> Unit): Button {
         val b = Button(ctx)
