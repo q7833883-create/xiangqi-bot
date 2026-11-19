@@ -147,7 +147,7 @@ object TemplateStore {
 
     /** 从截图按网格+模板识别棋盘（屏幕视角），空位为 null */
     fun recognizeBoard(bmpFull: Bitmap, g: Grid, templates: List<Template>, threshold: Float): Array<Array<String?>> {
-        return BoardRecognizer.recognize(bmpFull, g, templates, threshold, 0)
+        return BoardRecognizer.recognize(bmpFull, g, templates, threshold)
     }
 
     /** 屏幕视角棋盘 → FEN（红下黑上） */
